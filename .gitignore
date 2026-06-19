@@ -1,0 +1,24 @@
+# Secrets / local env
+.env
+terraform/*.tfvars
+terraform/*.auto.tfvars
+
+# Terraform (commit .terraform.lock.hcl -- it pins provider versions)
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/crash.log
+
+# Node
+app/slack_mcp_server/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# OS / editor
+.DS_Store

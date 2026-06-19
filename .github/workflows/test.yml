@@ -1,0 +1,60 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install slack-poster dependencies
+        run: npm install
+        working-directory: app/slack_mcp_server
+
+      - name: Syntax-check vendored MCP server
+        run: node --check index.js
+        working-directory: app/slack_mcp_server
+
+      - name: Validate JSON config
+        run: node -e "JSON.parse(require('fs').readFileSync('app/slack_mcp_server/package.json', 'utf8'))"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        run: pip install -r app/requirements.txt -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check app tests
+
+      - name: Type-check (mypy)
+        run: mypy app
+
+      - name: Unit tests (pytest)
+        run: pytest
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive terraform
+
+      - name: Terraform validate
+        working-directory: terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
