@@ -48,7 +48,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.7.5"
+          terraform_version: "1.15.5"
 
       - name: Terraform fmt check
         run: terraform fmt -check -recursive terraform
