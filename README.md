@@ -49,7 +49,7 @@ app/
   prompts/          System prompts for researcher + synthesizer
   slack_mcp_server/ Vendored slack-poster MCP server (Node, stdio transport)
   Dockerfile
-.github/workflows/deploy.yml   Build/push image, terraform apply -- manual (workflow_dispatch) for now
+.github/workflows/deploy.yml   Build/push image, terraform apply -- runs on push to main (and manually via workflow_dispatch)
 ```
 
 ## One-time setup
@@ -77,7 +77,30 @@ account/region before they can be invoked.
 - Slack: the vendored `slack_mcp_server` needs a bot token with `chat:write`
   scope, invited to the target channel (`#daily-brief` by default).
 
-### 3. Terraform
+### 3. Terraform state backend
+
+Terraform state is **not local** — it lives in S3 so both your machine and
+CI read/write the same state. The bucket can't be created by the same
+config that uses it as a backend (chicken-and-egg), so bootstrap it once,
+out of band:
+
+```
+aws s3api create-bucket --bucket <project>-tfstate-<account_id> \
+  --region <region> --create-bucket-configuration LocationConstraint=<region>
+aws s3api put-bucket-versioning --bucket <project>-tfstate-<account_id> \
+  --versioning-configuration Status=Enabled
+aws s3api put-bucket-encryption --bucket <project>-tfstate-<account_id> \
+  --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-public-access-block --bucket <project>-tfstate-<account_id> \
+  --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+```
+
+Then point `terraform/main.tf`'s `backend "s3"` block at that bucket (bucket
+name, key, region — see the existing block for the deployed instance's
+values). Locking is native S3 conditional writes (`use_lockfile = true`),
+which needs **Terraform 1.10+** — no DynamoDB lock table required.
+
+### 4. Terraform variables and first deploy
 
 ```
 cd terraform
@@ -92,43 +115,84 @@ tavily_api_key   = "<tavily key>"
 slack_bot_token  = "<slack bot token>"
 ```
 
-First deploy has a chicken-and-egg problem: the Lambda's `image_uri` must
-point at an image that already exists in ECR. So the first deploy is two
-steps:
+The Lambda's `image_uri` must point at an image that already exists in ECR,
+so the very first deploy is two steps even with Terraform itself:
 
 ```
 # 1. Create just the ECR repo
 terraform apply -target=aws_ecr_repository.this
 
-# 2. Build and push the image
+# 2. Build (note --provenance=false — see Dockerfile note below) and push
 aws ecr get-login-password --region <region> | \
   docker login --username AWS --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
-docker build -t <ecr_repo_url>:latest -f app/Dockerfile .
+docker build --provenance=false -t <ecr_repo_url>:latest -f app/Dockerfile .
 docker push <ecr_repo_url>:latest
 
 # 3. Apply everything else
 terraform apply
 ```
 
-After this, `.github/workflows/deploy.yml` handles both steps automatically
-on every push to `main` (and calls `aws lambda update-function-code` so new
-image pushes actually take effect — Terraform is told to ignore `image_uri`
-changes so it doesn't fight CI over it).
+`--provenance=false` matters: modern `docker build` (buildx-backed) attaches
+provenance/attestation manifests by default, producing a multi-manifest
+image that Lambda's container runtime rejects outright
+(`InvalidParameterValueException: ... media type ... is not supported`).
 
-### 4. GitHub Actions OIDC role
+After this one-time bootstrap, `.github/workflows/deploy.yml` runs both
+steps automatically on every push to `main`, and calls
+`aws lambda update-function-code` so new image pushes actually take effect
+(Terraform is told to ignore `image_uri` changes so it doesn't fight CI
+over it).
 
-The workflow assumes an AWS IAM role via OIDC (`secrets.AWS_DEPLOY_ROLE_ARN`)
-rather than long-lived access keys. Set up an IAM role trusting
-`token.actions.githubusercontent.com` for this repo, with permissions for
-ECR push, Lambda update, and the Terraform-managed resources. Also add repo
-secrets: `BEDROCK_MODEL_ID`, `TAVILY_API_KEY`, `SLACK_BOT_TOKEN`.
+### 5. GitHub Actions OIDC role
+
+The workflow assumes an AWS IAM role via OIDC
+(`secrets.AWS_DEPLOY_ROLE_ARN`) rather than long-lived access keys:
+
+1. Create the OIDC provider once per AWS account (skip if it already exists
+   — check with `aws iam list-open-id-connect-providers`):
+   ```
+   aws iam create-open-id-connect-provider \
+     --url https://token.actions.githubusercontent.com \
+     --client-id-list sts.amazonaws.com \
+     --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+   ```
+2. Create a role trusting that provider, scoped to this repo and branch
+   (not just the repo — `ref:refs/heads/main` specifically, so PR branches
+   can't assume it):
+   ```json
+   {
+     "Effect": "Allow",
+     "Principal": { "Federated": "arn:aws:iam::<account_id>:oidc-provider/token.actions.githubusercontent.com" },
+     "Action": "sts:AssumeRoleWithWebIdentity",
+     "Condition": {
+       "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com" },
+       "StringLike": { "token.actions.githubusercontent.com:sub": "repo:<owner>/<repo>:ref:refs/heads/main" }
+     }
+   }
+   ```
+3. Attach a policy covering: ECR (push/pull + repo policy management),
+   Lambda (create/update), the two Terraform-managed IAM roles (scoped to
+   their exact ARNs, plus `iam:PassRole` on them), CloudWatch Logs, Secrets
+   Manager (scoped to this project's secret name prefix), EventBridge
+   Scheduler, and the Terraform state bucket from step 3. The same policy
+   can be attached to whatever IAM user/role you deploy from locally — no
+   need to maintain two separate permission sets.
+4. Set repo secrets: `AWS_DEPLOY_ROLE_ARN` (the role's ARN),
+   `BEDROCK_MODEL_ID`, `TAVILY_API_KEY`, `SLACK_BOT_TOKEN`.
 
 ## Testing before trusting the schedule
+
+**Status:** confirmed working end-to-end in production — a manual invoke
+has successfully run researcher → synthesizer → Slack delivery and posted
+a real brief to `#daily-brief`. CI/CD is fully wired (push to `main` →
+automated `terraform apply` + image build/push + Lambda update via GitHub
+OIDC), and the nightly EventBridge schedule is enabled. The steps below are
+still the right way to validate any further change before trusting it.
 
 **Local (fastest feedback loop):**
 
 ```
-docker build -t daily-tech-brief-bedrock -f app/Dockerfile .
+docker build --provenance=false -t daily-tech-brief-bedrock -f app/Dockerfile .
 docker run --rm \
   -e BEDROCK_MODEL_ID=<value> \
   -e AWS_REGION=<region> \
@@ -153,9 +217,16 @@ aws lambda invoke \
   --function-name daily-tech-brief-bedrock \
   --payload '{}' \
   --cli-binary-format raw-in-base64-out \
+  --cli-read-timeout 620 \
   /tmp/out.json
 cat /tmp/out.json
 ```
+
+The Lambda timeout is 600s — the researcher's tool-use loop legitimately
+needs that much headroom once conversation context grows past a few
+iterations, so set `--cli-read-timeout` above it (the AWS CLI's own read
+timeout is much shorter by default and will give up on you long before the
+function actually finishes).
 
 Check CloudWatch Logs (`/aws/lambda/daily-tech-brief-bedrock`) for the
 researcher/synthesizer/delivery stage logs if anything fails — each stage
