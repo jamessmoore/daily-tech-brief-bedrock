@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Callable
 
 import boto3
@@ -44,7 +45,9 @@ class BedrockConverseClient:
         output_message: dict[str, Any] | None = None
         for iteration in range(1, max_iterations + 1):
             logger.info("Bedrock tool loop iteration %d/%d", iteration, max_iterations)
+            converse_started = time.monotonic()
             response = self._converse(system_prompt, messages, tool_config)
+            logger.info("Converse call took %.1fs", time.monotonic() - converse_started)
             output_message = response["output"]["message"]
             messages.append(output_message)
 
@@ -54,6 +57,11 @@ class BedrockConverseClient:
             if not tool_uses:
                 return self._extract_text(output_message)
 
+            logger.info(
+                "Dispatching %d tool call(s): %s",
+                len(tool_uses),
+                [tu["name"] for tu in tool_uses],
+            )
             messages.append(
                 {
                     "role": "user",
@@ -99,7 +107,12 @@ class BedrockConverseClient:
                 }
             }
         try:
+            started = time.monotonic()
             result = handler(tool_use.get("input", {}))
+            logger.info(
+                "Tool %r (input=%s) took %.1fs", name, tool_use.get("input", {}),
+                time.monotonic() - started,
+            )
             content = [{"json": self._as_json_object(result)}] if isinstance(
                 result, (dict, list)
             ) else [{"text": str(result)}]
