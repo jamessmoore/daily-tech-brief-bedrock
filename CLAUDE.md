@@ -17,24 +17,42 @@ for full architecture and one-time setup (Bedrock model access, Terraform,
 OIDC). This is also a public portfolio piece (webtechhq.com/portfolio), so
 README and commit history should stay client-presentable.
 
-## Current status — read before assuming anything is live
+## Current status — read before assuming anything is stale
 
-As of this writing: the repo is scaffolded, nothing has been deployed to
-AWS, and `main` branch protection / CI are not yet configured. The
-near-term goal, in order, is:
+As of this writing: CI (`test` workflow) and `main` branch protection are
+both live, and a real deploy exists in AWS account `293528978619`
+(us-west-2) — ECR repo, Lambda (container image), IAM roles, Secrets
+Manager entries, EventBridge Scheduler. A manual Lambda invoke has
+successfully run the full pipeline end-to-end and posted a real brief to
+the `#daily-brief` Slack channel (user-confirmed).
 
-1. Build CI checks (this repo's equivalent of `daily-tech-brief`'s `test`
-   workflow — syntax/lint/validate, no AWS or Slack calls).
-2. Configure `main` branch protection requiring that CI to pass before merge.
-3. Only after both of those are solid: do a real first deploy (Bedrock model
-   access enablement, `terraform apply`, manual Lambda invoke) per the
-   README's testing section.
+`.github/workflows/deploy.yml` is still `workflow_dispatch`-only (manual) —
+it has *not* been switched to trigger on push to `main` yet. Deploys
+(`terraform apply`, image rebuild/push, `aws lambda update-function-code`)
+are still done manually per the README's deploy steps. The EventBridge
+Scheduler resource exists and is `ENABLED`, so once "Bedrock model access,
+secrets, OIDC role" trust is established this could actually fire nightly —
+double check `aws scheduler get-schedule` state before assuming it's
+dormant.
 
-Do not run `terraform apply`, push an image, or otherwise touch real AWS
-resources unless the user has explicitly asked for that in the current
-request — per the master CLAUDE.md's "executing actions with care" guidance,
-this is exactly the kind of hard-to-reverse, billed, shared-state action that
-needs an explicit go-ahead each time, not a standing assumption.
+Bugs found and fixed only by running the real pipeline against live AWS
+(mocked unit tests didn't catch any of these — see git log on `app/` for
+the individual fixes): Bedrock IAM permissions for cross-region inference
+profiles, ECR image manifest format (buildx attestations break Lambda),
+ECR repository policy for Lambda's pull access, vendored file permissions
+(600 → unreadable by Lambda's non-root user), Bedrock client hanging
+indefinitely with no timeout/retry config, `toolResult` `json` field
+rejecting list results, growing message-history payload size stalling
+Converse calls past iteration 3-4, and the forced-final-answer fallback
+dropping required `toolConfig`. Useful context if something in this area
+breaks again — check whether it's a recurrence of one of these before
+re-diagnosing from scratch.
+
+Still treat `terraform apply`, image pushes, or other real AWS-touching
+actions as needing an explicit go-ahead in the current request, not a
+standing assumption — per the master CLAUDE.md's "executing actions with
+care" guidance. The bar now is "don't redeploy/reinvoke without being
+asked," not "deployment has never been attempted."
 
 ## Required workflow — no direct commits to main
 
