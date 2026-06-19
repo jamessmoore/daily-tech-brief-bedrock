@@ -1,8 +1,13 @@
 name: Deploy
 
+# Manual trigger only, for now. This workflow does real AWS deploys
+# (terraform apply, ECR push, lambda update-function-code) -- it should not
+# fire automatically until Bedrock model access, AWS secrets, and the OIDC
+# deploy role are actually set up and a manual deploy has been verified.
+# Switch to `on: push: branches: [main]` once ready to trust it on every
+# merge.
 on:
-  push:
-    branches: [main]
+  workflow_dispatch: {}
 
 permissions:
   id-token: write   # required for OIDC -> AWS role assumption
