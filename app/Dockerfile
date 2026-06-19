@@ -20,4 +20,10 @@ RUN pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.txt
 COPY app/ ${LAMBDA_TASK_ROOT}/
 COPY --from=slack_mcp_build /build/node_modules ${LAMBDA_TASK_ROOT}/slack_mcp_server/node_modules
 
+# COPY preserves source file modes; some vendored files are 600 on disk
+# (owner-only), which Lambda's non-root execution user can't read. Make
+# everything world-readable (and traversable/executable where it already
+# was) rather than depending on host file permissions matching at deploy time.
+RUN chmod -R a+rX ${LAMBDA_TASK_ROOT}
+
 CMD ["handler.lambda_handler"]
