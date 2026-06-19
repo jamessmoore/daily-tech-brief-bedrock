@@ -38,12 +38,14 @@ needs an explicit go-ahead each time, not a standing assumption.
 
 ## Required workflow — no direct commits to main
 
-`main` will back the live nightly Lambda once deployed, and `push to main`
-triggers `.github/workflows/deploy.yml` (build/push image, `terraform
-apply`, `lambda update-function-code`). Unlike the old CLI-based repo, a
-merge to `main` here **is** the deploy action, not just a no-op until some
-separate host pulls new code. Treat every PR merge into `main` accordingly
-once the deploy workflow is live.
+`main` will back the live nightly Lambda once deployed. `deploy.yml`
+(build/push image, `terraform apply`, `lambda update-function-code`) is
+currently `workflow_dispatch`-only (manual) — deliberately not wired to
+`push: branches: [main]` yet, so merges can't accidentally trigger a real AWS
+deploy before Bedrock access, secrets, and the OIDC role are actually set up
+and a manual deploy has been verified. Once that's done and `deploy.yml` is
+switched to trigger on push, a merge to `main` **becomes** the deploy
+action — update this note when that switch happens.
 
 1. Create a new branch off `main` for the change (e.g. `git checkout -b fix/short-description`).
 2. Commit changes to that branch.
@@ -94,7 +96,7 @@ terraform/               # ECR, Lambda (container image), EventBridge Scheduler,
 tests/                   # pytest unit tests for app/ (mocked boto3, fake stdio MCP server -- no AWS/Slack calls)
 .github/workflows/
   test.yml               # CI gate: lint/type-check/unit tests/terraform validate, on every PR to main
-  deploy.yml             # Build+push image, terraform apply, on push to main
+  deploy.yml             # Build+push image, terraform apply -- manual (workflow_dispatch) for now
 pyproject.toml           # ruff/mypy/pytest config
 requirements-dev.txt     # pytest, ruff, mypy
 .env.example

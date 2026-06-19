@@ -49,7 +49,7 @@ app/
   prompts/          System prompts for researcher + synthesizer
   slack_mcp_server/ Vendored slack-poster MCP server (Node, stdio transport)
   Dockerfile
-.github/workflows/deploy.yml   CI: build/push image, terraform apply, on push to main
+.github/workflows/deploy.yml   Build/push image, terraform apply -- manual (workflow_dispatch) for now
 ```
 
 ## One-time setup
