@@ -49,6 +49,16 @@ def test_run_tool_loop_dispatches_tool_and_returns_final_text(monkeypatch):
     assert calls == [{"query": "x"}]
     assert client._client.converse.call_count == 2
 
+    # Bedrock's toolResult `json` field must be a JSON *object* -- a tool
+    # handler returning a list (like web_search) must get wrapped, not
+    # passed through as a bare array. (Caught live against real Bedrock as
+    # a ValidationException before this assertion existed.)
+    second_call_messages = client._client.converse.call_args_list[1].kwargs["messages"]
+    tool_result = second_call_messages[-2]["content"][0]["toolResult"]
+    assert tool_result["content"][0]["json"] == {
+        "results": [{"title": "a", "url": "u", "content": "c"}]
+    }
+
 
 def test_run_tool_loop_forces_final_answer_at_iteration_cap(monkeypatch):
     client = make_client(monkeypatch)
