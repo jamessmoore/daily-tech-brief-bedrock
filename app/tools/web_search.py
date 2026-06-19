@@ -9,6 +9,14 @@ import requests
 
 TAVILY_API_URL = "https://api.tavily.com/search"
 
+# Tavily's `content` field can run several KB per result. The full message
+# history (including every prior tool_result) gets resent on every Converse
+# call, so by iteration 4+ that compounds into a request body large enough
+# to make Bedrock calls stall for 60s+ per attempt in practice. Trimming
+# here, at the source, keeps every subsequent turn's payload bounded.
+MAX_RESULTS_PER_SEARCH = 5
+MAX_CONTENT_CHARS = 400
+
 WEB_SEARCH_TOOL_SPEC: dict[str, Any] = {
     "toolSpec": {
         "name": "web_search",
@@ -43,7 +51,7 @@ def web_search(query: str) -> list[dict[str, str]]:
             "api_key": api_key,
             "query": query,
             "search_depth": "advanced",
-            "max_results": 8,
+            "max_results": MAX_RESULTS_PER_SEARCH,
             "days": 2,
         },
         timeout=20,
@@ -54,10 +62,14 @@ def web_search(query: str) -> list[dict[str, str]]:
         {
             "title": result.get("title", ""),
             "url": result.get("url", ""),
-            "content": result.get("content", ""),
+            "content": _truncate(result.get("content", "")),
         }
         for result in data.get("results", [])
     ]
+
+
+def _truncate(text: str, limit: int = MAX_CONTENT_CHARS) -> str:
+    return text if len(text) <= limit else text[:limit] + "..."
 
 
 def web_search_tool_handler(tool_input: dict[str, Any]) -> list[dict[str, str]]:
