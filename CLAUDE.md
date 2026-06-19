@@ -26,14 +26,26 @@ Manager entries, EventBridge Scheduler. A manual Lambda invoke has
 successfully run the full pipeline end-to-end and posted a real brief to
 the `#daily-brief` Slack channel (user-confirmed).
 
-`.github/workflows/deploy.yml` is still `workflow_dispatch`-only (manual) —
-it has *not* been switched to trigger on push to `main` yet. Deploys
-(`terraform apply`, image rebuild/push, `aws lambda update-function-code`)
-are still done manually per the README's deploy steps. The EventBridge
-Scheduler resource exists and is `ENABLED`, so once "Bedrock model access,
-secrets, OIDC role" trust is established this could actually fire nightly —
-double check `aws scheduler get-schedule` state before assuming it's
-dormant.
+Full CI/CD is live: `.github/workflows/deploy.yml` triggers on push to
+`main` (and via manual `workflow_dispatch`), assumes AWS via GitHub OIDC
+(role `daily-tech-brief-bedrock-github-deploy`, trust-scoped to
+`repo:jamessmoore/daily-tech-brief-bedrock:ref:refs/heads/main` — no
+long-lived AWS keys in GitHub), and has successfully run an automated
+`terraform apply` + image build/push + `lambda update-function-code` end to
+end. Terraform state lives in S3
+(`daily-tech-brief-bedrock-tfstate-293528978619`, native locking via
+`use_lockfile`, requires Terraform 1.10+) — both local CLI runs and CI read
+the same state, so **a merge to `main` now genuinely is the deploy
+action**. The EventBridge Scheduler is `ENABLED` and will fire nightly
+unattended — don't assume it's dormant; check `aws scheduler get-schedule`
+if in doubt.
+
+The local deploy user (`flintstone`) and the CI OIDC role share one IAM
+managed policy (`daily-tech-brief-bedrock-deploy`) so permissions don't
+drift between manual and automated deploys. If a deploy fails on a
+permissions error, that policy is almost certainly what needs a new version
+— it's been bumped ~6 times already as real deploy/runtime gaps surfaced
+(see policy history if accessible, or just reason from the error).
 
 Bugs found and fixed only by running the real pipeline against live AWS
 (mocked unit tests didn't catch any of these — see git log on `app/` for
@@ -43,27 +55,26 @@ ECR repository policy for Lambda's pull access, vendored file permissions
 (600 → unreadable by Lambda's non-root user), Bedrock client hanging
 indefinitely with no timeout/retry config, `toolResult` `json` field
 rejecting list results, growing message-history payload size stalling
-Converse calls past iteration 3-4, and the forced-final-answer fallback
-dropping required `toolConfig`. Useful context if something in this area
-breaks again — check whether it's a recurrence of one of these before
-re-diagnosing from scratch.
+Converse calls past iteration 3-4, the forced-final-answer fallback
+dropping required `toolConfig`, hardcoded wrong region in `deploy.yml`, and
+missing `--provenance=false` on the CI Docker build (same image-manifest
+bug as above, just in the automated path). Useful context if something in
+this area breaks again — check whether it's a recurrence of one of these
+before re-diagnosing from scratch.
 
-Still treat `terraform apply`, image pushes, or other real AWS-touching
-actions as needing an explicit go-ahead in the current request, not a
-standing assumption — per the master CLAUDE.md's "executing actions with
-care" guidance. The bar now is "don't redeploy/reinvoke without being
-asked," not "deployment has never been attempted."
+Given CI/CD is now real and automatic, **merging to `main` deploys to
+production** — review PRs touching `app/`, `terraform/`, or `Dockerfile`
+accordingly. Still treat any *manual* `terraform apply`, direct image push,
+or `aws lambda invoke` outside the normal PR flow as needing an explicit
+go-ahead in the current request, per the master CLAUDE.md's "executing
+actions with care" guidance.
 
 ## Required workflow — no direct commits to main
 
-`main` will back the live nightly Lambda once deployed. `deploy.yml`
-(build/push image, `terraform apply`, `lambda update-function-code`) is
-currently `workflow_dispatch`-only (manual) — deliberately not wired to
-`push: branches: [main]` yet, so merges can't accidentally trigger a real AWS
-deploy before Bedrock access, secrets, and the OIDC role are actually set up
-and a manual deploy has been verified. Once that's done and `deploy.yml` is
-switched to trigger on push, a merge to `main` **becomes** the deploy
-action — update this note when that switch happens.
+`main` backs the live nightly Lambda. Every merge to `main` triggers
+`deploy.yml` (build/push image, `terraform apply`, `lambda
+update-function-code`) via GitHub OIDC — a merge **is** the deploy action,
+not a no-op. Treat every PR into `main` accordingly.
 
 1. Create a new branch off `main` for the change (e.g. `git checkout -b fix/short-description`).
 2. Commit changes to that branch.
@@ -110,11 +121,11 @@ app/
   slack_mcp_server/      # Vendored MCP server (post_to_slack, post_file_to_slack) — source only, node_modules built in Docker
   Dockerfile             # Lambda Python 3.13 base + Node 20
   requirements.txt
-terraform/               # ECR, Lambda (container image), EventBridge Scheduler, IAM, Secrets Manager
+terraform/               # ECR, Lambda (container image), EventBridge Scheduler, IAM, Secrets Manager; state in S3 (see main.tf backend block)
 tests/                   # pytest unit tests for app/ (mocked boto3, fake stdio MCP server -- no AWS/Slack calls)
 .github/workflows/
   test.yml               # CI gate: lint/type-check/unit tests/terraform validate, on every PR to main
-  deploy.yml             # Build+push image, terraform apply -- manual (workflow_dispatch) for now
+  deploy.yml             # Build+push image, terraform apply -- runs on push to main via GitHub OIDC (and manually via workflow_dispatch)
 pyproject.toml           # ruff/mypy/pytest config
 requirements-dev.txt     # pytest, ruff, mypy
 .env.example
