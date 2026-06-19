@@ -7,10 +7,21 @@ import time
 from typing import Any, Callable
 
 import boto3
+from botocore.config import Config
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 6
+
+# A live invocation hung indefinitely inside a Converse call with no error
+# and no log line, until the Lambda's own timeout killed it -- botocore's
+# defaults apparently don't bound that. Bound it explicitly and retry
+# transient stalls instead of hanging silently for minutes.
+BEDROCK_CLIENT_CONFIG = Config(
+    connect_timeout=10,
+    read_timeout=60,
+    retries={"max_attempts": 3, "mode": "standard"},
+)
 
 ToolHandler = Callable[[dict[str, Any]], Any]
 
@@ -18,7 +29,9 @@ ToolHandler = Callable[[dict[str, Any]], Any]
 class BedrockConverseClient:
     def __init__(self, model_id: str, region_name: str | None = None) -> None:
         self._model_id = model_id
-        self._client = boto3.client("bedrock-runtime", region_name=region_name)
+        self._client = boto3.client(
+            "bedrock-runtime", region_name=region_name, config=BEDROCK_CLIENT_CONFIG
+        )
 
     def converse_text(self, system_prompt: str, user_message: str) -> str:
         """Single Converse call with no tools — used by the synthesizer step."""
