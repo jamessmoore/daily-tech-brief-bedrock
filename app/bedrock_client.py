@@ -100,9 +100,9 @@ class BedrockConverseClient:
             }
         try:
             result = handler(tool_use.get("input", {}))
-            content = (
-                [{"json": result}] if isinstance(result, (dict, list)) else [{"text": str(result)}]
-            )
+            content = [{"json": self._as_json_object(result)}] if isinstance(
+                result, (dict, list)
+            ) else [{"text": str(result)}]
             return {"toolResult": {"toolUseId": tool_use_id, "content": content}}
         except Exception as exc:  # noqa: BLE001 - surface any tool failure to the model
             logger.exception("Tool %r raised an exception", name)
@@ -117,3 +117,10 @@ class BedrockConverseClient:
     @staticmethod
     def _extract_text(message: dict[str, Any]) -> str:
         return "".join(block["text"] for block in message["content"] if "text" in block)
+
+    @staticmethod
+    def _as_json_object(result: Any) -> dict[str, Any]:
+        """Bedrock's toolResult `json` field must be a JSON object, not an
+        array -- tool handlers that return a list (e.g. web_search) need
+        wrapping."""
+        return result if isinstance(result, dict) else {"results": result}
