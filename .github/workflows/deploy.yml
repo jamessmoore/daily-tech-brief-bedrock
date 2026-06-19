@@ -1,12 +1,8 @@
 name: Deploy
 
-# Manual trigger only, for now. This workflow does real AWS deploys
-# (terraform apply, ECR push, lambda update-function-code) -- it should not
-# fire automatically until Bedrock model access, AWS secrets, and the OIDC
-# deploy role are actually set up and a manual deploy has been verified.
-# Switch to `on: push: branches: [main]` once ready to trust it on every
-# merge.
 on:
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
@@ -14,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-west-2
   PROJECT_NAME: daily-tech-brief-bedrock
 
 jobs:
@@ -32,7 +28,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.7.5"
+          terraform_version: "1.15.5"
 
       - name: Terraform init
         working-directory: terraform
@@ -60,7 +56,7 @@ jobs:
 
       - name: Build and push image
         run: |
-          docker build -t "${{ steps.ecr.outputs.url }}:latest" -f app/Dockerfile .
+          docker build --provenance=false -t "${{ steps.ecr.outputs.url }}:latest" -f app/Dockerfile .
           docker push "${{ steps.ecr.outputs.url }}:latest"
 
       - name: Terraform apply -- everything else (Lambda, IAM, Scheduler, secrets)
