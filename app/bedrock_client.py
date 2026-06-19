@@ -86,7 +86,25 @@ class BedrockConverseClient:
             "Hit max tool iterations (%d) without a final answer; forcing a text-only response",
             max_iterations,
         )
-        response = self._converse(system_prompt, messages, tool_config=None)
+        # Bedrock requires toolConfig on any call whose history contains
+        # toolUse/toolResult blocks -- it can't be dropped here even though
+        # we don't want another tool call. Instruct the model not to call
+        # tools instead, and pass tool_config through unchanged.
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "text": (
+                            "You've reached the maximum number of research "
+                            "iterations. Provide your final research summary "
+                            "now as plain text, without calling any more tools."
+                        )
+                    }
+                ],
+            }
+        )
+        response = self._converse(system_prompt, messages, tool_config)
         return self._extract_text(response["output"]["message"])
 
     def _converse(

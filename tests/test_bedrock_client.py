@@ -79,6 +79,15 @@ def test_run_tool_loop_forces_final_answer_at_iteration_cap(monkeypatch):
     assert result == "forced final"
     assert client._client.converse.call_count == 4  # 3 tool iterations + 1 forced text-only call
 
+    # Bedrock rejects calls with toolUse/toolResult in history but no
+    # toolConfig -- the forced final call must still pass it through, even
+    # though we don't want another tool call. (Live regression: dropping it
+    # raised "The toolConfig field must be defined when using toolUse and
+    # toolResult content blocks.")
+    final_call_kwargs = client._client.converse.call_args_list[-1].kwargs
+    assert "toolConfig" in final_call_kwargs
+    assert final_call_kwargs["toolConfig"] == {"tools": [{"toolSpec": {"name": "web_search"}}]}
+
 
 def test_run_tool_loop_reports_handler_exception_as_tool_error(monkeypatch):
     client = make_client(monkeypatch)
