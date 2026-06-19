@@ -14,6 +14,12 @@ provider "aws" {
 
 data "aws_caller_identity" "current" {}
 
+locals {
+  # Strip a "us."/"global."/"eu."/"apac." cross-region-inference prefix off
+  # bedrock_model_id to get the underlying foundation-model ID.
+  bedrock_base_model_id = replace(var.bedrock_model_id, "/^(us|global|eu|apac)\\./", "")
+}
+
 # --- ECR -----------------------------------------------------------------
 
 resource "aws_ecr_repository" "this" {
@@ -61,8 +67,14 @@ resource "aws_iam_role_policy" "lambda_bedrock_and_secrets" {
           "bedrock:ConverseStream",
         ]
         Resource = [
-          "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}",
+          # bedrock_model_id is a cross-region inference profile ID (e.g.
+          # "us.anthropic.claude-sonnet-4-6"). Invoking it requires both the
+          # profile ARN itself AND the underlying foundation-model ARN with a
+          # wildcard region, since the profile can route the call to any of
+          # its destination regions. See:
+          # https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
           "arn:aws:bedrock:${var.aws_region}:${data.aws_caller_identity.current.account_id}:inference-profile/${var.bedrock_model_id}",
+          "arn:aws:bedrock:*::foundation-model/${local.bedrock_base_model_id}",
         ]
       },
       {
