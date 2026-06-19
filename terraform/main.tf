@@ -31,6 +31,32 @@ resource "aws_ecr_repository" "this" {
   }
 }
 
+# Resource-based policy on the repo itself -- without this, Lambda's service
+# principal can't pull the image at all, regardless of what the execution
+# role grants. See:
+# https://docs.aws.amazon.com/lambda/latest/dg/configuration-images.html#configuration-images-permissions
+resource "aws_ecr_repository_policy" "lambda_pull" {
+  repository = aws_ecr_repository.this.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "LambdaECRImageRetrievalPolicy"
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action = [
+        "ecr:BatchGetImage",
+        "ecr:GetDownloadUrlForLayer",
+      ]
+      Condition = {
+        StringEquals = {
+          "aws:sourceArn" = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.project_name}"
+        }
+      }
+    }]
+  })
+}
+
 # --- IAM: Lambda execution role -------------------------------------------
 
 resource "aws_iam_role" "lambda" {
