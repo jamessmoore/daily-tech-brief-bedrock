@@ -239,4 +239,4 @@ unattended.
 
 ## Contributing
 
-- Please see the [contributors](CONTRIBUTOR.md) section for details.
+- Please see the [CONTRIBUTING](CONTRIBUTING.md) section for details.
