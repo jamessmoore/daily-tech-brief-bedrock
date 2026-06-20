@@ -236,3 +236,7 @@ Once a manual invoke posts successfully to Slack, the EventBridge Scheduler
 rule (nightly, `America/Phoenix` by default — see `schedule_expression` /
 `schedule_timezone` in `terraform/variables.tf`) can be trusted to run
 unattended.
+
+## Contributing
+
+- Please see the [contributors](CONTRIBUTOR.md) section for details.
