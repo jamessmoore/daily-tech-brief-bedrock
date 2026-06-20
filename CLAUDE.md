@@ -30,9 +30,12 @@ Full CI/CD is live: `.github/workflows/deploy.yml` triggers on push to
 `main` (and via manual `workflow_dispatch`), assumes AWS via GitHub OIDC
 (role `daily-tech-brief-bedrock-github-deploy`, trust-scoped to
 `repo:jamessmoore/daily-tech-brief-bedrock:ref:refs/heads/main` — no
-long-lived AWS keys in GitHub), and has successfully run an automated
-`terraform apply` + image build/push + `lambda update-function-code` end to
-end. Terraform state lives in S3
+long-lived AWS keys in GitHub), and has now run an automated `terraform
+apply` + image build/push + `lambda update-function-code` end to end
+**via an actual push-to-`main` merge** (PR #15, run completed in 1m32s) —
+not just a manual `workflow_dispatch` test. The "a merge to `main` is the
+deploy action" claim below is empirically confirmed, not aspirational.
+Terraform state lives in S3
 (`daily-tech-brief-bedrock-tfstate-293528978619`, native locking via
 `use_lockfile`, requires Terraform 1.10+) — both local CLI runs and CI read
 the same state, so **a merge to `main` now genuinely is the deploy
