@@ -134,6 +134,13 @@ resource "aws_lambda_function" "this" {
   memory_size   = var.lambda_memory_size
   timeout       = var.lambda_timeout
 
+  # Only one run should ever be posting to Slack at a time -- a retried or
+  # overlapping invoke (CLI client timeout + retry, manual run colliding with
+  # the nightly schedule, etc.) has caused duplicate briefs before. Capping
+  # concurrency at 1 makes AWS reject/queue the second invocation instead of
+  # letting two independent runs complete and both post.
+  reserved_concurrent_executions = 1
+
   environment {
     variables = {
       BEDROCK_MODEL_ID  = var.bedrock_model_id
