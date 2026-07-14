@@ -43,12 +43,16 @@ action**. The EventBridge Scheduler is `ENABLED` and will fire nightly
 unattended — don't assume it's dormant; check `aws scheduler get-schedule`
 if in doubt.
 
-The local deploy user (`flintstone`) and the CI OIDC role share one IAM
-managed policy (`daily-tech-brief-bedrock-deploy`) so permissions don't
-drift between manual and automated deploys. If a deploy fails on a
-permissions error, that policy is almost certainly what needs a new version
-— it's been bumped ~6 times already as real deploy/runtime gaps surfaced
-(see policy history if accessible, or just reason from the error).
+The local deploy user (`daily-tech-brief-bedrock-deploy`, a dedicated IAM
+user scoped to just this project -- not the shared admin-group `flintstone`
+user) and the CI OIDC role share one IAM managed policy
+(`daily-tech-brief-bedrock-deploy`) so permissions don't drift between
+manual and automated deploys. Both the policy and its attachments are now
+Terraform-managed (`terraform/deploy_policy.tf`) -- a permissions fix should
+go through a PR that edits that file, not an ad hoc
+`aws iam create-policy-version`. It's been bumped ~6 times already as real
+deploy/runtime gaps surfaced before this was brought under Terraform (see
+policy history if accessible, or just reason from the error).
 
 Bugs found and fixed only by running the real pipeline against live AWS
 (mocked unit tests didn't catch any of these — see git log on `app/` for
