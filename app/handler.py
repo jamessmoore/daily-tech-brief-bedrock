@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import boto3
 from bedrock_client import BedrockConverseClient
@@ -20,6 +22,10 @@ BEDROCK_MODEL_ID = os.environ["BEDROCK_MODEL_ID"]
 SLACK_CHANNEL = os.environ.get("SLACK_CHANNEL", "#daily-brief")
 TAVILY_SECRET_ARN = os.environ.get("TAVILY_SECRET_ARN")
 SLACK_SECRET_ARN = os.environ.get("SLACK_SECRET_ARN")
+
+# Must match terraform's `schedule_timezone` so the date embedded in the
+# brief matches the date the nightly schedule actually fires on.
+BRIEF_TIMEZONE = os.environ.get("BRIEF_TIMEZONE", "America/Phoenix")
 
 _secrets_loaded = False
 
@@ -58,13 +64,19 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     bedrock = BedrockConverseClient(model_id=BEDROCK_MODEL_ID, region_name=AWS_REGION)
 
+    # Models have no reliable sense of "today" on their own -- without this,
+    # both steps below fall back on guessing a date, which drifts over time.
+    today = datetime.now(ZoneInfo(BRIEF_TIMEZONE)).strftime("%A, %B %d, %Y")
+    logger.info("Brief date: %s (%s)", today, BRIEF_TIMEZONE)
+
     logger.info("Starting researcher step")
     try:
         research_notes = bedrock.run_tool_loop(
             system_prompt=_read_prompt("researcher_system.md"),
             user_message=(
-                "Research the last 24-48 hours of DevOps, AI/ML, MCP, and cloud "
-                "infrastructure news. Use the web_search tool as needed."
+                f"Today's date is {today}. Research the last 24-48 hours of "
+                "DevOps, AI/ML, MCP, and cloud infrastructure news. Use the "
+                "web_search tool as needed."
             ),
             tool_specs=[WEB_SEARCH_TOOL_SPEC],
             tool_handlers={"web_search": web_search_tool_handler},
@@ -78,7 +90,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     try:
         brief = bedrock.converse_text(
             system_prompt=_read_prompt("synthesizer_system.md"),
-            user_message=research_notes,
+            user_message=f"Today's date is {today}.\n\n{research_notes}",
         )
     except Exception:
         logger.exception("Synthesizer step failed")

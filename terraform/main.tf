@@ -140,6 +140,9 @@ resource "aws_lambda_function" "this" {
       SLACK_CHANNEL     = var.slack_channel
       TAVILY_SECRET_ARN = aws_secretsmanager_secret.tavily_api_key.arn
       SLACK_SECRET_ARN  = aws_secretsmanager_secret.slack_bot_token.arn
+      # Must match schedule_timezone -- the brief's date computation and the
+      # EventBridge schedule's firing time need to agree on one timezone.
+      BRIEF_TIMEZONE = var.schedule_timezone
     }
   }
 
