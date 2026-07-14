@@ -67,8 +67,15 @@ def test_lambda_handler_happy_path_runs_all_three_stages_in_order(monkeypatch):
         "briefChars": len("the brief"),
         "slackResult": {"content": [{"text": "Posted successfully."}]},
     }
-    # synthesizer must receive the researcher's output as its input
-    assert fake_bedrock.converse_text_calls[0]["user_message"] == "raw research"
+    # synthesizer must receive the researcher's output as its input, prefixed
+    # with the actual current date so it doesn't have to guess one
+    synth_message = fake_bedrock.converse_text_calls[0]["user_message"]
+    assert synth_message.endswith("raw research")
+    assert synth_message.startswith("Today's date is ")
+
+    # researcher must also be told the actual current date
+    research_message = fake_bedrock.run_tool_loop_calls[0]["user_message"]
+    assert research_message.startswith("Today's date is ")
     # slack delivery must receive the synthesizer's output, on the configured channel
     assert slack_calls == [("the brief", handler.SLACK_CHANNEL)]
 
