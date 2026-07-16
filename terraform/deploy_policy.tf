@@ -185,6 +185,20 @@ resource "aws_iam_policy" "deploy" {
         Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-deploy"
       },
       {
+        # Full lifecycle management of the dedicated deploy user resource
+        # itself -- Terraform needs iam:GetUser just to refresh state on
+        # every plan/apply, not only when attaching/detaching policies.
+        Sid    = "IamUser"
+        Effect = "Allow"
+        Action = [
+          "iam:CreateUser",
+          "iam:DeleteUser",
+          "iam:GetUser",
+          "iam:TagUser",
+        ]
+        Resource = aws_iam_user.deploy.arn
+      },
+      {
         Sid    = "SelfPolicyAttachment"
         Effect = "Allow"
         Action = [
