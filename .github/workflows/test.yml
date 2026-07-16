@@ -45,16 +45,16 @@ jobs:
       - name: Unit tests (pytest)
         run: pytest
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
         with:
-          terraform_version: "1.15.5"
+          tofu_version: "1.12.1"
 
       - name: Terraform fmt check
-        run: terraform fmt -check -recursive terraform
+        run: tofu fmt -check -recursive terraform
 
       - name: Terraform validate
         working-directory: terraform
         run: |
-          terraform init -backend=false
-          terraform validate
+          tofu init -backend=false
+          tofu validate
