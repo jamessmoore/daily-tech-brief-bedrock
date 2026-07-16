@@ -25,14 +25,14 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
         with:
-          terraform_version: "1.15.5"
+          tofu_version: "1.12.1"
 
       - name: Terraform init
         working-directory: terraform
-        run: terraform init
+        run: tofu init
 
       - name: Terraform variables
         run: |
@@ -44,12 +44,12 @@ jobs:
 
       - name: Terraform apply -- ECR repo only (must exist before the image push)
         working-directory: terraform
-        run: terraform apply -auto-approve -target=aws_ecr_repository.this
+        run: tofu apply -auto-approve -target=aws_ecr_repository.this
 
       - name: Get ECR repository URL
         id: ecr
         working-directory: terraform
-        run: echo "url=$(terraform output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
+        run: echo "url=$(tofu output -raw ecr_repository_url)" >> "$GITHUB_OUTPUT"
 
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -61,12 +61,12 @@ jobs:
 
       - name: Terraform apply -- everything else (Lambda, IAM, Scheduler, secrets)
         working-directory: terraform
-        run: terraform apply -auto-approve
+        run: tofu apply -auto-approve
 
       - name: Update Lambda to the freshly pushed image
         working-directory: terraform
         run: |
-          function_name=$(terraform output -raw lambda_function_name)
+          function_name=$(tofu output -raw lambda_function_name)
           aws lambda update-function-code \
             --function-name "$function_name" \
             --image-uri "${{ steps.ecr.outputs.url }}:latest"
