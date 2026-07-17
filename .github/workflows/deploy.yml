@@ -1,8 +1,9 @@
 name: Deploy
 
+# Live AWS deployment was decommissioned 2026-07-17 (tofu destroy'd). Auto-deploy-on-push
+# is intentionally disabled so a future merge to main doesn't silently recreate the stack --
+# use workflow_dispatch to redeploy deliberately.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 permissions:
